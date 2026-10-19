@@ -35,3 +35,4 @@ body.cloud-locked>.topbar,body.cloud-locked>main {visibility:hidden;pointer-even
 #retryCloudBtn {padding:6px 8px;font-size:11px}
 @media(max-width:1000px){.auth-story {padding:50px 8%}.auth-screen {grid-template-columns:1fr 1fr}.auth-story h1 {font-size:40px}.auth-brand {margin-bottom:45px}.account-menu #accountName {display:none}}
 @media(max-width:680px){.auth-screen {display:block}.auth-story {min-height:0;padding:28px 24px}.auth-brand {margin-bottom:12px;font-size:28px}.auth-story h1 {font-size:27px;margin-bottom:12px}.auth-story p,.auth-route {display:none}.auth-main {padding:36px 28px}.auth-story:after {width:45px}.auth-card h2 {font-size:26px}#retryCloudBtn {display:none}}
+@media(min-width:761px){.account-menu #accountName{display:inline}}

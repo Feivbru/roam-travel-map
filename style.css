@@ -69,3 +69,56 @@
 .map-stage{overflow:clip}
 
 .transport-audit-table{overflow:auto;max-height:48vh}.transport-audit-table table{border-collapse:collapse;width:100%;font-size:11px;line-height:1.8}.transport-audit-table th{position:sticky;top:0;background:#f1f5ed;text-align:left;color:#56715e;padding:8px}.transport-audit-table td{vertical-align:top;padding:10px 8px;border-bottom:1px solid #e4e9de;min-width:110px}.transport-audit-table td:first-child{min-width:145px}.transport-audit-table small,.transport-audit-table b{display:block}.transport-audit-table small{font-size:10px;color:#7c8d79;margin-top:4px}.transport-audit-table small.warning{color:#a16636}
+
+/* Workspace tools on the left, account and sync status at the far right. */
+.top-actions{flex:1;min-width:0;margin-left:0;justify-content:space-between;gap:20px}
+.workspace-tools,.account-tools{display:flex;align-items:center;gap:6px;min-width:0}
+.account-tools{margin-left:auto;gap:12px}
+.top-actions .settings,.top-actions #preparationToggle{border:0!important}
+.saved{margin-right:0;white-space:nowrap}
+.topbar{gap:22px}.breadcrumb{max-width:180px;min-width:0}.breadcrumb button{max-width:130px}
+
+/* Each trip has a persistent icon and name, with its own active state. */
+.rail{width:82px;padding:20px 6px 16px;gap:12px;min-height:0}
+.rail-trips{width:100%;min-height:0;overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:10px}
+.rail .rail-trip{width:100%;height:auto;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 3px;border-radius:12px}
+.rail-trip-icon{display:grid;place-items:center;width:37px;height:37px;border:1px solid #dce5d8;border-radius:11px;background:#fffefa;color:var(--trip-color);font-size:16px;font-weight:600}
+.rail-trip-name{font-size:9px;line-height:1.5;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail .rail-active{background:#e4eee3;color:#216961}.rail-active .rail-trip-icon{background:var(--trip-color);color:white;border-color:transparent}
+.rail .rail-add{flex-shrink:0}.rail-bottom{padding-top:10px}
+.planning-search-row{display:flex;align-items:stretch;gap:7px}
+.sidebar-planning .map-search{flex:1;width:0;min-width:0}.sidebar-planning .map-search input{width:0;flex:1;padding-left:6px;padding-right:4px}
+.add-day{border-radius:8px;background:#edf2e9;padding:0 9px;white-space:nowrap;font-size:10px;color:#527662}
+
+/* One position model keeps the card and zoom together as drawers slide in. */
+.map-stage{--card-width:min(342px,calc(100cqw - 40px));--card-right:24px;--card-bottom:36px;--drawer-offset:0px}
+.has-place-panel .map-stage{--drawer-offset:var(--place-panel-width);--card-width:min(342px,calc(100cqw - var(--place-panel-width) - 82px))}
+.detail,.has-place-panel .detail{left:auto;right:var(--card-right);bottom:var(--card-bottom);width:var(--card-width);max-width:none;max-height:min(62%,600px);padding:20px;transform:translateX(calc(-1 * var(--drawer-offset)));scrollbar-width:thin;overscroll-behavior:contain}
+.detail-meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px 9px;margin:9px 0}.detail-meta p{margin:0}
+.detail-meta .compact-prep-badge{margin:0;flex-shrink:0}
+.detail .detail-actions{gap:6px}.detail-actions button,.detail-actions a{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+.map-zoom{position:absolute;right:var(--card-right);bottom:var(--card-bottom);display:flex;flex-direction:column;z-index:451;background:#fffefa;border:1px solid #dfe5d8;border-radius:9px;box-shadow:0 4px 18px #243d3520;transition:right .34s cubic-bezier(.22,1,.36,1)}
+.map-stage.has-detail .map-zoom{right:calc(var(--card-right) + var(--drawer-offset) + var(--card-width) + 12px)}
+.map-zoom button{width:38px;height:39px;padding:0;font-size:25px;color:#5d7168;line-height:1;border-radius:8px}
+.map-zoom button+button{border-top:1px solid #e5e9e0;border-radius:0 0 8px 8px}
+.has-place-panel .map-stage:not(.has-detail) .map-zoom{right:calc(var(--card-right) + var(--drawer-offset))}
+.map-stage.has-detail .map-bottom{right:auto;width:max(130px,calc(100% - var(--card-width) - var(--drawer-offset) - 108px))}
+@media(min-width:1800px){.detail{max-height:57%}}
+@media(max-width:1250px){.breadcrumb{display:none}.topbar{gap:18px}.top-actions{gap:12px}}
+@media(max-width:1150px){.map-stage{--card-width:min(300px,calc(100cqw - 40px));--card-right:18px}.has-place-panel .map-stage{--card-width:min(300px,calc(100cqw - var(--place-panel-width) - 76px))}}
+@media(max-width:760px){
+ .topbar{gap:8px}.brand b{display:none}.workspace-tools,.account-tools{gap:0}.account-tools{gap:2px}.top-actions{gap:4px}.top-actions button{padding:7px 6px}.account-menu{gap:0}
+ .rail{display:flex;width:58px;padding:14px 4px 12px;gap:9px}.rail .rail-trip{padding:5px 2px}.rail-trip-icon{width:32px;height:32px;font-size:14px}.rail-trip-name{font-size:8px}
+ .sidebar{left:58px;width:min(calc(100vw - 58px),355px)}
+ .map-stage{--card-right:12px;--card-bottom:32px;--card-width:min(300px,calc(100cqw - 72px))}
+ .has-place-panel .map-stage{--card-width:calc(100cqw - var(--place-panel-width) - 68px)}
+ .detail,.has-place-panel .detail{padding:14px;max-height:53%;width:var(--card-width);right:var(--card-right)}
+ .map-stage.has-detail .map-zoom{right:calc(var(--card-right) + var(--drawer-offset) + var(--card-width) + 8px)}
+ .map-zoom button{width:32px;height:34px;font-size:23px}.map-stage.has-detail .map-bottom{display:none}
+ .mobile-sidebar{bottom:26px;left:12px}.detail-meta{gap:5px}.detail-actions button,.detail-actions a{font-size:9px;padding:6px 7px}
+}
+@media(prefers-reduced-motion:reduce){.map-zoom{transition:none}}
+.detail .detail-actions{position:sticky;bottom:0;background:#fffefa;padding-top:10px;padding-bottom:2px;box-shadow:0 -9px 12px #fffefa;z-index:2}
+@media(min-width:761px){.saved{display:inline}}
+.breadcrumb{max-width:250px;white-space:nowrap}.breadcrumb button{max-width:150px}
+@media(max-width:760px){.sidebar{transform:translateX(calc(-100% - 58px))}.sidebar.mobile-open{transform:translateX(0)}.mobile-sidebar{top:154px;bottom:auto;left:12px}}

@@ -1,0 +1,40 @@
+# Roam 漫游 · 在线旅行地图
+
+以地图为主体的多日旅行计划。邮箱注册、登录、找回密码由 Supabase Auth 提供；每个账户的计划和路线坐标分别保存在 PostgreSQL 的 `roam_states`、`roam_routes` 中。
+
+## 本地开发
+
+```sh
+npm ci
+cp .env.example .env
+# 填写项目 URL 和 publishable key / anon key，不能填 secret / service_role key
+npm run build
+npm run dev
+```
+
+开发时 `config.mjs` 需填写同一组公开项目配置，或先运行构建后预览 `dist/`。`.env`、用户草稿、迁移数据不进入 Git。
+
+## 数据库
+
+按顺序执行 `supabase/migrations/001_roam.sql` 和 `002_route_cleanup.sql`。前者开启 RLS，并仅向登录用户开放自己的记录；写入只能调用校验了 `auth.uid()` 的函数，前端不传入可冒用的用户 ID。行程保存使用 revision 比较，防止不同设备静默覆盖。路线缓存只包含经纬度，29天到期，定时清理留出30天上限以内的余量。
+
+## GitHub Pages
+
+仓库 Settings → Pages，Source 选 GitHub Actions。仓库变量 `SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY` 使用公开的 Supabase 项目配置。推送 main 后，Actions 测试、构建并部署 dist。
+
+在 Supabase Authentication → URL Configuration 中，将 Site URL 设置为发布后的完整网址，并加入同一地址与 `http://127.0.0.1:8190/` 作为允许回跳地址。邮箱确认保持开启；试用默认邮件服务有收件人与发送额度限制，正式开放多人注册前配置 SMTP。
+
+Google Maps 继续使用用户在「地图设置」填写的浏览器 Key，仅保存在当前浏览器会话。请在 Google Cloud 的网站来源限制加入发布后的站点地址。部署不把现有 Google Key 放进源码。
+
+## 迁移已有行程
+
+登录自己的账号后，用「导入」选择原本地版导出的 JSON。新账户从空白开始，网站及公开代码中不包含原旅行行程。可选的云端迁移 JSON 也支持附带仍在有效期内的路线坐标，导入时同步到当前账号。JSON、KML、ICS 导出继续可用；原始 Google 评论、照片与参考页面不入库。
+
+## 验证
+
+```sh
+npm test
+npm run build
+```
+
+测试覆盖跨设备保存冲突、读取失败不覆盖、按账户查询、路线只保存允许字段。数据库测试用临时 PostgreSQL 验证 RLS、匿名访问拒绝和用户数据隔离。

@@ -1,0 +1,11 @@
+project_id = "roam-online"
+
+[auth]
+site_url = "https://feivbru.github.io/roam-travel-map/"
+additional_redirect_urls = ["https://feivbru.github.io/roam-travel-map/", "https://feivbru.github.io/roam-travel-map/?recovery=1", "http://127.0.0.1:8190/", "http://127.0.0.1:8190/?recovery=1"]
+enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true

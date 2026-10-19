@@ -117,7 +117,8 @@
  .map-zoom button{width:32px;height:34px;font-size:23px}.map-stage.has-detail .map-bottom{display:none}
  .mobile-sidebar{bottom:26px;left:12px}.detail-meta{gap:5px}.detail-actions button,.detail-actions a{font-size:9px;padding:6px 7px}
 }
-@media(prefers-reduced-motion:reduce){.map-zoom{transition:none}}
+.detail{transition:transform .34s cubic-bezier(.22,1,.36,1),width .34s cubic-bezier(.22,1,.36,1)}
+@media(prefers-reduced-motion:reduce){.map-zoom,.detail{transition:none}}
 .detail .detail-actions{position:sticky;bottom:0;background:#fffefa;padding-top:10px;padding-bottom:2px;box-shadow:0 -9px 12px #fffefa;z-index:2}
 @media(min-width:761px){.saved{display:inline}}
 .breadcrumb{max-width:250px;white-space:nowrap}.breadcrumb button{max-width:150px}

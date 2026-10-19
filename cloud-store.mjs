@@ -18,6 +18,19 @@ export function createCloudStore(client,userId){
    if(error){if(error.code==='40001'||error.message?.includes('ROAM_CONFLICT')){conflicted=true;throw new CloudConflict()}throw Error('云端暂未保存：'+error.message)}
    revision=Number(data);return revision;
   },
+  async loadMapSettings(){
+   const {data,error}=await client.from('roam_map_settings').select('engine,google_api_key').eq('user_id',userId).maybeSingle();
+   // Never echo server errors here: validation messages may include credential values.
+   if(error)throw Error('账号地图设置读取失败，请稍后重试。');
+   return data?{engine:data.engine,key:data.google_api_key}:null;
+  },
+  async saveMapSettings(settings){
+   const engine=settings?.engine,key=String(settings?.key??'').trim();
+   if(!['osm','google'].includes(engine)||(key&&!/^AIza[A-Za-z0-9_-]{35}$/.test(key))||(engine==='google'&&!key))throw Error('请填写有效的 Google 浏览器 API Key。');
+   const {error}=await client.rpc('save_roam_map_settings',{new_engine:engine,new_google_api_key:key});
+   if(error)throw Error('账号地图设置未保存，请检查网络后重试。');
+   return {engine,key};
+  },
   async loadRoutes(){
    const {data,error}=await client.from('roam_routes').select('route_key,created_at_ms,path').eq('user_id',userId).gt('expires_at',new Date().toISOString()).order('created_at_ms',{ascending:false}).limit(1000);
    if(error)throw Error('云端路线读取失败：'+error.message);

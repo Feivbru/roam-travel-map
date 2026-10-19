@@ -1,6 +1,6 @@
 # Roam 漫游 · 在线旅行地图
 
-以地图为主体的多日旅行计划。邮箱注册、登录、找回密码由 Supabase Auth 提供；每个账户的计划和路线坐标分别保存在 PostgreSQL 的 `roam_states`、`roam_routes` 中。
+以地图为主体的多日旅行计划。邮箱注册、登录、找回密码由 Supabase Auth 提供；每个账户的计划和路线坐标分别保存在 PostgreSQL 的 `roam_states`、`roam_routes` 中；地图服务与浏览器 Key 单独保存在 `roam_map_settings` 中。
 
 ## 本地开发
 
@@ -16,7 +16,7 @@ npm run dev
 
 ## 数据库
 
-按顺序执行 `supabase/migrations/001_roam.sql` 和 `002_route_cleanup.sql`。前者开启 RLS，并仅向登录用户开放自己的记录；写入只能调用校验了 `auth.uid()` 的函数，前端不传入可冒用的用户 ID。行程保存使用 revision 比较，防止不同设备静默覆盖。路线缓存只包含经纬度，29天到期，定时清理留出30天上限以内的余量。
+按顺序执行 `supabase/migrations/001_roam.sql` 、`002_route_cleanup.sql` 和 `003_map_settings.sql`。前者开启 RLS，并仅向登录用户开放自己的记录；写入只能调用校验了 `auth.uid()` 的函数，前端不传入可冒用的用户 ID。行程保存使用 revision 比较，防止不同设备静默覆盖。路线缓存只包含经纬度，29天到期，定时清理留出30天上限以内的余量。
 
 ## GitHub Pages
 
@@ -24,7 +24,7 @@ npm run dev
 
 在 Supabase Authentication → URL Configuration 中，将 Site URL 设置为发布后的完整网址，并加入同一地址与 `http://127.0.0.1:8190/` 作为允许回跳地址。邮箱确认保持开启；试用默认邮件服务有收件人与发送额度限制，正式开放多人注册前配置 SMTP。
 
-Google Maps 继续使用用户在「地图设置」填写的浏览器 Key，仅保存在当前浏览器会话。请在 Google Cloud 的网站来源限制加入发布后的站点地址。部署不把现有 Google Key 放进源码。
+Google Maps 使用用户在「地图设置」填写的浏览器 Key，按账号保存并在登录时恢复。已有登录会话中的 Key 会自动迁移，可通过「移除账号 Key」清空。设置与行程独立，不进入 JSON/KML/ICS 导出和公开源码。RLS 限制用户只能读取自己的设置；数据库管理员仍有查看权限，这不是端到端加密。浏览器 Maps Key 会出现在前端请求中，须在 Google Cloud 设置网站来源与 API 限制及配额。
 
 ## 迁移已有行程
 

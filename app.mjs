@@ -4,6 +4,7 @@ import {transportPlan,routeQueryMode,computeTransitWalkRoute,computeWalkTransitR
 import {ROUTE_TTL_MS,routeCacheKey,geometryForStorage,readGeometryCache} from './route-cache.mjs?v=4.3';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let preparationPanelOpen=false;
+let accountMapSettings={engine:'osm',key:''};
 let state,tripId,dayId,selection=null,overview=false,picking=false,engine='osm',googleMap,googleObjects=[],leafletObjects=[],routeBusy=false,routeCache=new Map(),saveQueue=Promise.resolve(),searchResults=[],lastSearch=0,toastTimer;
 let STORE='roam-cloud-state-v1';
 const trip=()=>state.trips.find(t=>t.id===tripId), day=()=>trip()?.days.find(d=>d.id===dayId);
@@ -134,7 +135,26 @@ function manageTrips(){modal('我的行程',`${state.trips.map(t=>`<div class="t
 function confirmDelete(type){const names={trip:'整个行程及其所有计划',day:'当天计划及其所有安排',stop:'这个地点及其入站交通段'};modal('确认删除',`<p class="help-text">将删除${names[type]}。建议先导出 JSON 备份。</p><div class="form-footer"><button data-action="close-modal" class="secondary">取消</button><button class="primary" data-confirm-delete="${type}" data-delete-id="${esc($('#modal').dataset.stopId??'')}">确认删除</button></div>`)}
 function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function exportMenu(){if(!trip())return toast('请先创建行程');modal('导出行程',`<p class="help-text">JSON 完整保留每天计划、交通预算、地点与参考贴，可重新导入。已采纳的交通说明也会保留；不包含Google Key、原始查询结果或路线轨迹。</p><div class="file-options"><button data-action="export-trip"><b>↧ 当前行程 · JSON</b><small>完整备份，适合分享、迁移与重新导入</small></button><button data-action="export-all"><b>↧ 全部行程 · JSON</b><small>当前账户所有旅行计划的完整备份</small></button><button data-action="export-kml"><b>↧ 地图地点与示意线 · KML</b><small>在 Google My Maps 中导入；每一天一个文件夹，直线不是导航轨迹</small></button><button data-action="export-ics"><b>↧ 时间安排 · 日历 ICS</b><small>导入 Google / Apple 日历，按行程时区换算为 UTC</small></button></div>`)}
-function settings(){modal('地图与实际路线',`<p class="help-text">默认的 OpenStreetMap 无需 Key。Google 模式会在应用内显示 Google 底图，并通过 Routes Library 逐段绘制真实步行、地铁、巴士与火车路线。</p><form id="editorForm"><label>地图服务<select name="engine"><option value="osm" ${engine==='osm'?'selected':''}>OpenStreetMap · 无需 Key</option><option value="google" ${engine==='google'?'selected':''}>Google Maps · 自备 Key</option></select></label>${field('key','Google Maps JavaScript API Key',sessionStorage.getItem('roam-google-key')??'','password','autocomplete="off"')}<p class="help-text">在 Google Cloud 开启计费、Maps JavaScript API 和 Routes API。将浏览器 Key 的网站来源限制加入 <code>${esc(new URL('./',location.href).href+'*')}</code>，地点介绍及评论还需开启 Places API (New)，并加入 Key 的 API 限制。API 限制只允许使用到的服务，并设置用量额度。Key 只在当前浏览器会话内保存，不写入行程文件。路线与地点详情请求可能计费；只有点击详情或计算路线时才请求。</p><p class="help-text">切换底图不会自动请求路线；点击「计算当天实际路线」才逐段调用。公交会使用计划日期和当地出发时间；采纳推荐的路段不限单一交通类型，最终换乘以返回步骤为准。游船航程请手工安排。</p>${footer()}</form><div class="modal-section">全程交通核对</div><p class="help-text">按Google返回的推荐线路更新整个行程的交通说明；保留固定时间和交通预算，并列出需要额外留时间的路段。</p><button type="button" class="secondary" data-action="audit-transport">按 Google 推荐更新全程交通</button>`);bindForm(async f=>{const chosen=f.get('engine');if(chosen==='google'){const key=f.get('key').trim();if(!key)return toast('请填写 Google API Key');const button=$('#editorForm button[type="submit"]');button.disabled=true;try{await connectGoogle(key);sessionStorage.setItem('roam-google-key',key);sessionStorage.setItem('roam-map-engine','google');engine='google';$('#map').hidden=true;$('#gmap').hidden=false;close();render(true);toast('Google 地图已连接，可计算当天的实际路线')}catch(err){button.disabled=false;engine='osm';$('#map').hidden=false;$('#gmap').hidden=true;map.invalidateSize();toast('Google 连接失败：'+err.message)}}else{sessionStorage.setItem('roam-map-engine','osm');engine='osm';$('#map').hidden=false;$('#gmap').hidden=true;close();map.invalidateSize();render(true)}})}
+function settings(){
+ modal('地图与实际路线',`<p class="help-text">地图设置随账号保存，换浏览器登录后自动恢复。OpenStreetMap 无需 Key；Google Maps 支持实际路线与地点介绍。</p><form id="editorForm"><label>地图服务<select name="engine"><option value="osm" ${engine==='osm'?'selected':''}>OpenStreetMap · 无需 Key</option><option value="google" ${engine==='google'?'selected':''}>Google Maps · 自备 Key</option></select></label>${field('key','Google Maps JavaScript API Key',accountMapSettings.key,'password','autocomplete="off" spellcheck="false"')}<p class="help-text">Key 保存在当前账号的数据库设置中，不写入行程导出文件和公开源码。仅本人登录可读取；数据库管理员仍有权限查看。前端地图请求会使用此 Key，请务必限制允许的网站和 API。</p><p class="help-text">Google Cloud 需开启计费、Maps JavaScript API、Routes API，以及地点详情所需的 Places API (New)。网站来源限制加入 <code>${esc(new URL('./',location.href).href+'*')}</code>，API 限制只允许用到的服务，并设置用量额度。计算路线、加载地点详情可能计费。</p><p class="help-text">切换底图不会自动计算路线。公交查询使用计划日期和当地出发时间；游船航程请手工安排。</p>${accountMapSettings.key?'<button type="button" class="secondary" id="removeAccountMapKey">移除账号 Key</button>':''}${footer()}</form><div class="modal-section">全程交通核对</div><p class="help-text">按 Google 返回的推荐线路更新整个行程的交通说明，保留固定时间和交通预算。</p><button type="button" class="secondary" data-action="audit-transport">按 Google 推荐更新全程交通</button>`);
+ bindForm(async f=>{
+  const button=$('#editorForm button[type="submit"]');button.disabled=true;
+  try{
+   const previousKey=accountMapSettings.key;
+   accountMapSettings=await cloudStore.saveMapSettings({engine:f.get('engine'),key:f.get('key')});
+   clearLegacyMapSettings();
+   // Maps JS only accepts its key at initial script load; changing it needs a fresh page.
+   if(window.google?.maps&&previousKey!==accountMapSettings.key){location.reload();return}
+   close();await applyMapSettings();toast('地图设置已保存到账号，其他浏览器登录后会自动恢复。');
+  }catch(error){toast(error.message)}finally{if(button.isConnected)button.disabled=false}
+ });
+ const remove=$('#removeAccountMapKey');if(remove)remove.onclick=async()=>{
+  remove.disabled=true;
+  try{await cloudStore.saveMapSettings({engine:'osm',key:''});clearLegacyMapSettings();location.reload()}
+  catch(error){remove.disabled=false;toast(error.message)}
+ };
+}
+
 let googleLoading=null;
 async function connectGoogle(key){if(!window.google?.maps?.importLibrary){if(googleLoading)await googleLoading;else{googleLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');let done=false;const timer=setTimeout(()=>fail('加载超时，请检查网络 / Key'),18000);function fail(message){if(done)return;done=true;clearTimeout(timer);script.remove();googleLoading=null;reject(Error(message))}window.roamGoogleReady=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};window.gm_authFailure=()=>{fail('Key 未获授权，请核对 API、网站限制与计费');engine='osm';$('#gmap').hidden=true;$('#map').hidden=false;map.invalidateSize();render(true);toast('Google Key 验证失败，已恢复 OpenStreetMap')};script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',callback:'roamGoogleReady',language:'zh-CN'});script.onerror=()=>fail('无法加载 Google Maps');document.head.append(script)});await googleLoading}}await Promise.all([google.maps.importLibrary('maps'),google.maps.importLibrary('marker'),google.maps.importLibrary('routes')]);if(!googleMap){googleMap=new google.maps.Map($('#gmap'),{center:{lat:47.499,lng:19.053},zoom:13,mapId:'DEMO_MAP_ID',disableDefaultUI:true,zoomControl:true,gestureHandling:'greedy',scrollwheel:false,isFractionalZoomEnabled:true,clickableIcons:true});googleMap.addListener('click',e=>{if(e.placeId){e.stop();pickGooglePlace(e.placeId)}else if(picking)acceptMapPoint({lat:e.latLng.lat(),lng:e.latLng.lng()})})}}
 let transportAudit=[];
@@ -235,7 +255,7 @@ const actions={
  'editor-pick':()=>beginEditorPick(),'relocate-stop':()=>beginMapPick(selection?.id),'use-picked-place':usePickedPlace,'dismiss-picked-place':dismissPickedPlace,'photo-prev':()=>showPlacePhoto(-1),'photo-next':()=>showPlacePhoto(1),'photo-enlarge':enlargePlacePhoto,'use-detail-location':useDetailLocation,'place-info':()=>openPlacePanel(),'close-place-panel':closePlacePanel,'retry-place-info':()=>loadPlaceInfo(true),'refresh-place-match':()=>loadPlaceInfo(true,true),
  'toggle-preparations':()=>togglePreparations(),'close-preparations':()=>closePreparations(),
  'toggle-sidebar':()=>$('.sidebar').classList.toggle('mobile-open'),
- 'help':()=>modal('把旅行，放回地图上',`<p class="help-text">1. 左上切换或新建「行程」，每个行程可以添加多天计划。左侧日期卡片切换当天，「全程总览」同时显示所有天。</p><p class="help-text">2. 地图始终是主体。点地图标记或左侧地点看详情，点交通段高亮并放大该段。若机场或维也纳让视野过远，用「城市聚焦」查看当天景点。</p><p class="help-text">3. 搜索地点、双击地图或点「地图选点」添加安排。编辑地点可调整位置顺序、固定开始时间、停留时长与参考贴。交通方式、换乘说明及路段参考贴可单独编辑。</p><p class="help-text">4. 未填固定时间的安排自动衔接上一站。固定时间前有空闲会保留留白；若交通或停留导致赶不上，时间线会标出冲突。</p><p class="help-text">5. 地点连线默认是直线示意，不代表可通行路径。在「地图设置」接入 Google Key 后，按段或按天计算实际路线。实际轨迹自动保存到本机，获取后30天内刷新可直接恢复。补全只计算缺失路段；需要最新方案时点「刷新当天路线」。换乘文字与耗时按需重新查询。</p><p class="help-text">6. 修改自动保存到当前账户的云端数据库，并在本设备保留未同步草稿。JSON 支持完整导入导出；KML 用于 Google My Maps；ICS 用于日历。底图与搜索需要联网。源码与操作说明见项目 README.md。</p>`)
+ 'help':()=>modal('把旅行，放回地图上',`<p class="help-text">1. 左上切换或新建「行程」，每个行程可以添加多天计划。左侧日期卡片切换当天，「全程总览」同时显示所有天。</p><p class="help-text">2. 地图始终是主体。点地图标记或左侧地点看详情，点交通段高亮并放大该段。若机场或维也纳让视野过远，用「城市聚焦」查看当天景点。</p><p class="help-text">3. 搜索地点、双击地图或点「地图选点」添加安排。编辑地点可调整位置顺序、固定开始时间、停留时长与参考贴。交通方式、换乘说明及路段参考贴可单独编辑。</p><p class="help-text">4. 未填固定时间的安排自动衔接上一站。固定时间前有空闲会保留留白；若交通或停留导致赶不上，时间线会标出冲突。</p><p class="help-text">5. 地点连线默认是直线示意，不代表可通行路径。在「地图设置」接入 Google Key 后，按段或按天计算实际路线。实际轨迹自动保存到账号，获取后29天内刷新可直接恢复。补全只计算缺失路段；需要最新方案时点「刷新当天路线」。换乘文字与耗时按需重新查询。</p><p class="help-text">6. 修改自动保存到当前账户的云端数据库，并在本设备保留未同步草稿。JSON 支持完整导入导出；KML 用于 Google My Maps；ICS 用于日历。底图与搜索需要联网。源码与操作说明见项目 README.md。</p>`)
 };
 document.addEventListener('click',e=>{const prep=e.target.closest('[data-prep-toggle]');if(prep){e.preventDefault();const s=day()?.stops.find(s=>s.id===prep.dataset.prepToggle);if(s){s.preparation={...normalizePreparation(s.preparation),completed:!s.preparation?.completed};persist();render(false)}return}const prepEdit=e.target.closest('[data-prep-edit]');if(prepEdit){e.preventDefault();selection={id:prepEdit.dataset.prepEdit,type:'stop'};editStop(selection.id);return}const b=e.target.closest('[data-action]');if(b){e.preventDefault();try{const result=actions[b.dataset.action]?.();if(result instanceof Promise)result.catch(err=>toast(err.message))}catch(err){toast(err.message)}return}const candidate=e.target.closest('[data-place-candidate]');if(candidate){chooseGooglePlace(candidate.dataset.placeCandidate);return}const reference=e.target.closest('[data-reference]');if(reference){openReference(Number(reference.dataset.reference));return}const d=e.target.closest('[data-day]');if(d){dayId=d.dataset.day;selection=null;overview=false;render(true);return}const stop=e.target.closest('[data-stop]'),leg=e.target.closest('[data-leg]');if(stop||leg){selectItem(dayId,stop?.dataset.stop??leg.dataset.leg,stop?'stop':'leg');return}const t=e.target.closest('[data-trip]');if(t){tripId=t.dataset.trip;dayId=trip().days[0]?.id;overview=false;selection=null;close();render(true);return}const searchItem=e.target.closest('[data-search-index]');if(searchItem){const r=searchResults[Number(searchItem.dataset.searchIndex)];$('#searchResults').hidden=true;editStop(null,Number(r.lat),Number(r.lon));$('#editorForm input[name="name"]').value=r.name??r.display_name.split(',')[0];return}const c=e.target.closest('[data-confirm-delete]');if(c){const type=c.dataset.confirmDelete;if(type==='trip'){state.trips=state.trips.filter(t=>t.id!==tripId);tripId=state.trips[0]?.id;dayId=trip()?.days[0]?.id}else if(type==='day'){trip().days=trip().days.filter(d=>d.id!==dayId);dayId=trip().days[0]?.id}else day().stops=day().stops.filter(s=>s.id!==c.dataset.deleteId);selection=null;persist();close();render(true);toast('已删除');return}if(!e.target.closest('.map-search'))$('#searchResults').hidden=true});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[role="button"]')){e.preventDefault();e.target.click()}if(e.key==='Escape'){closePreparations();closePlacePanel();selection=null;cancelMapPick();$('#searchResults').hidden=true;$('.sidebar').classList.remove('mobile-open');render(false)}});
@@ -274,12 +294,28 @@ function transitLines(route){
   return line?[line.shortName||line.name||'公共交通']:[];
  })))];
 }
+function clearLegacyMapSettings(){
+ try{sessionStorage.removeItem('roam-google-key');sessionStorage.removeItem('roam-map-engine')}catch{}
+}
+async function applyMapSettings(){
+ if(accountMapSettings.engine==='google'&&accountMapSettings.key){
+  try{
+   await connectGoogle(accountMapSettings.key);engine='google';$('#map').hidden=true;$('#gmap').hidden=false;render(true);return;
+  }catch{toast('账号 Key 已保存；Google 暂未连接，请在地图设置检查网站限制、API 与计费。')}
+ }
+ engine='osm';$('#map').hidden=false;$('#gmap').hidden=true;map.invalidateSize();render(true);
+}
 async function restoreGoogleMode(){
- const key=sessionStorage.getItem('roam-google-key');
- if(!key||sessionStorage.getItem('roam-map-engine')==='osm')return;
  try{
-  await connectGoogle(key);engine='google';$('#map').hidden=true;$('#gmap').hidden=false;render(true);
- }catch{toast('已保留 Google Key；地图暂未连接，请在地图设置重试。')}
+  const saved=await cloudStore.loadMapSettings();
+  if(saved){accountMapSettings=saved;clearLegacyMapSettings()}
+  else{
+   // Upgrade the already signed-in user's existing session without exposing its key.
+   let key='',preferred='';try{key=sessionStorage.getItem('roam-google-key')??'';preferred=sessionStorage.getItem('roam-map-engine')??''}catch{}
+   if(key){accountMapSettings=await cloudStore.saveMapSettings({key,engine:preferred==='osm'?'osm':'google'});clearLegacyMapSettings();toast('现有 Google Key 已保存到账号。')}
+  }
+  await applyMapSettings();
+ }catch{toast('账号地图设置暂未读取，已保留本次会话的旧设置；请刷新重试。')}
 }
 
 // Trackpad scrolling is panning; macOS/Chromium reports a pinch as ctrl+wheel.

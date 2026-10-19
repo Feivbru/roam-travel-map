@@ -7,3 +7,4 @@ dist/
 .migration/
 *.private.json
 .DS_Store
+supabase/.temp/

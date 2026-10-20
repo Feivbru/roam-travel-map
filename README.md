@@ -38,3 +38,7 @@ npm run build
 ```
 
 测试覆盖跨设备保存冲突、读取失败不覆盖、按账户查询、路线只保存允许字段。数据库测试用临时 PostgreSQL 验证 RLS、匿名访问拒绝和用户数据隔离。
+
+## Agent / MCP
+
+右上角「◇ Agent」可创建、撤销只读或读写连接令牌。支持远程 MCP Streamable HTTP、stdio 桥接与终端命令行，修改默认先预览；同一套 revision 检查避免覆盖并发修改。接口独立部署为 Supabase Edge Function，不访问 Google Key。完整接入、操作类型和部署说明见 [MCP.md](MCP.md)。

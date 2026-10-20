@@ -9,3 +9,7 @@ minimum_password_length = 8
 [auth.email]
 enable_signup = true
 enable_confirmations = true
+
+[functions.roam-mcp]
+# A Roam scoped token is checked inside the handler; it is not a Supabase JWT.
+verify_jwt = false

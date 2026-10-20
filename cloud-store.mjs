@@ -18,6 +18,25 @@ export function createCloudStore(client,userId){
    if(error){if(error.code==='40001'||error.message?.includes('ROAM_CONFLICT')){conflicted=true;throw new CloudConflict()}throw Error('云端暂未保存：'+error.message)}
    revision=Number(data);return revision;
   },
+  async fetchState(){
+   const {data,error}=await client.from('roam_states').select('payload,revision').eq('user_id',userId).maybeSingle();
+   if(error)throw Error('云端行程读取失败');
+   return {revision:data?.revision??0,payload:data?validateState(data.payload):{schemaVersion:1,trips:[]}};
+  },
+  adoptState(record){const payload=validateState(record.payload);revision=record.revision;conflicted=false;return payload},
+  async getRemoteRevision(){
+   const {data,error}=await client.from('roam_states').select('revision').eq('user_id',userId).maybeSingle();
+   if(error)throw Error('云端版本读取失败');return data?.revision??0;
+  },
+  async listAgentTokens(){
+   const {data,error}=await client.from('roam_agent_tokens').select('id,label,token_hint,can_write,created_at,expires_at,revoked_at,last_used_at').eq('user_id',userId).order('revoked_at',{ascending:false,nullsFirst:true}).order('expires_at',{ascending:false}).limit(100);
+   if(error)throw Error('连接列表读取失败');return data??[];
+  },
+  async createAgentToken({label,hash,hint,write,days}){
+   const {data,error}=await client.rpc('create_roam_agent_token',{new_label:label,new_token_hash:hash,new_token_hint:hint,allow_write:write,valid_days:days});
+   if(error)throw Error('连接令牌未创建');return data;
+  },
+  async revokeAgentToken(id){const {error}=await client.rpc('revoke_roam_agent_token',{target_id:id});if(error)throw Error('连接令牌未撤销')},
   async loadMapSettings(){
    const {data,error}=await client.from('roam_map_settings').select('engine,google_api_key').eq('user_id',userId).maybeSingle();
    // Never echo server errors here: validation messages may include credential values.

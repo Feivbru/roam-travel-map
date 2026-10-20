@@ -19,3 +19,7 @@ GitHub Pages 提供网页，Supabase Auth 提供邮箱账户，PostgreSQL 保存
 注册、验证邮箱并登录。导入本地版导出的 JSON；本机另备有带路线坐标的云端迁移文件，不能放进公开仓库。地图设置中的 Google 浏览器 Key 首次由使用者填写，保存到当前账号后可跨浏览器恢复，且不会随行程导出。可在设置中移除。为线上网站添加来源限制：`https://feivbru.github.io/roam-travel-map/*`。
 
 当前使用 Supabase 默认邮件发送服务，适合先用组织成员邮箱试用。向其他人开放邮箱注册前，请在 Supabase 配置自己的 SMTP 服务并检查发信额度。
+
+## MCP 服务
+
+接口：`https://nokkeydhtxewgtkxxnsh.supabase.co/functions/v1/roam-mcp`。数据库已应用 `004_agent_mcp.sql`；函数按 `supabase/config.toml` 使用 Roam 作用域令牌认证。服务端凭据只来自 Edge 环境，网页不包含它。修改 `mcp/server.mjs`、`mcp/operations.mjs`、`mcp/http.mjs`、`mcp/backend.mjs` 或共享 `core.mjs` 后，除发布前端，还需重新执行 `supabase functions deploy roam-mcp --project-ref nokkeydhtxewgtkxxnsh --use-api`。接入步骤见 [MCP.md](MCP.md)。

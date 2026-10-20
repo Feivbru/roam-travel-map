@@ -20,3 +20,4 @@ test('地图设置独立于行程，按账号读取，写入不接受用户ID，
  await s.saveMapSettings({engine:'osm',key:''});
  c.error={message:'sensitive '+key};await assert.rejects(s.loadMapSettings(),e=>!e.message.includes(key));await assert.rejects(s.saveMapSettings({engine:'google',key}),e=>!e.message.includes(key));
 });
+test('后台检查远端版本不会提前改写本地revision，确认采用后才更新',async()=>{const c=client(),s=createCloudStore(c,'user-a');await s.loadState();c.row={revision:4,payload:empty};assert.equal(await s.getRemoteRevision(),4);const record=await s.fetchState();assert.equal(s.revision,0);assert.deepEqual(s.adoptState(record),empty);assert.equal(s.revision,4)});

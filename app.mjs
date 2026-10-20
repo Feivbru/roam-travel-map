@@ -1,3 +1,4 @@
+import {showAgentConnections} from './agent-ui.mjs';
 import {initializeCloudAuth,cloudStore,cloudUser} from './cloud-auth.mjs';
 import {MODES,uid,esc,safeURL,located,minutes,clock,schedule,zonedInstant,validateState,makeStop,kml,ics,PLACE_TAGS,normalizeTags,stopEmoji,wheelIntent,relocateStop,routingTarget,googleDirectionsURL,getDetailsPlaceId,placeSearchQuery,needsPlaceRematch,bindPlaceDetails,normalizePreparation,dayPreparations,activeWalkFrom,activeWalkTo} from './core.mjs?v=4.3';
 import {transportPlan,routeQueryMode,computeTransitWalkRoute,computeWalkTransitRoute} from './transport-plan.mjs?v=4.3';
@@ -6,7 +7,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let preparationPanelOpen=false;
 let accountMapSettings={engine:'osm',key:''};
 let state,tripId,dayId,selection=null,overview=false,picking=false,engine='osm',googleMap,googleObjects=[],leafletObjects=[],routeBusy=false,routeCache=new Map(),saveQueue=Promise.resolve(),searchResults=[],lastSearch=0,toastTimer;
-let STORE='roam-cloud-state-v1';
+let STORE='roam-cloud-state-v1',localEditGeneration=0,pendingStateWrites=0,checkingCloud=false;
 const trip=()=>state.trips.find(t=>t.id===tripId), day=()=>trip()?.days.find(d=>d.id===dayId);
 const dayColors=['#216961','#a4864e','#7964a1','#537db0','#b46e61','#718d54'];
 const map=L.map('map',{zoomControl:false,doubleClickZoom:false,scrollWheelZoom:false,zoomSnap:0}).setView([47.499,19.053],13);
@@ -38,12 +39,15 @@ async function init(){
  if(cloudStore.conflicted){$('#saveStatus').textContent='● 云端有新版本 · 本机草稿已保留';$('#retryCloudBtn').hidden=false;$('#saveStatus').classList.add('save-error')}
  else if(hasDraft)persist();else $('#saveStatus').textContent='● 已与云端同步';
  await restoreRouteGeometry();await restoreGoogleMode();
+ window.addEventListener('focus',checkExternalChanges);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkExternalChanges()});setInterval(checkExternalChanges,30000);
 }
 function persist(){
+ localEditGeneration++;
  let payload,draftSaved=false;
  try{state=validateState(state);payload=structuredClone(state)}catch(error){toast('保存失败：'+error.message);return}
  try{localStorage.setItem(STORE+'-draft',JSON.stringify({payload,baseRevision:cloudStore.revision,dirty:true}));draftSaved=true}catch{toast('本机备份空间不足，仍会尝试云端保存；请保持页面打开。')}
  $('#saveStatus').textContent='● 正在同步…';$('#saveStatus').classList.remove('save-error')
+ pendingStateWrites++;
  saveQueue=saveQueue.catch(()=>{}).then(async()=>{
   try{
    await cloudStore.saveState(payload);
@@ -51,8 +55,20 @@ function persist(){
    if(JSON.stringify(latest?.payload)===JSON.stringify(payload))localStorage.removeItem(STORE+'-draft');
    else if(latest){latest.baseRevision=cloudStore.revision;localStorage.setItem(STORE+'-draft',JSON.stringify(latest))}}catch{}
    $('#saveStatus').textContent='● 已保存到云端';$('#retryCloudBtn').hidden=true;
-  }catch(error){$('#saveStatus').textContent=cloudStore.conflicted?'● 云端有新版本 · 同步已暂停':draftSaved?'● 本机草稿已保存 · 云端未同步':'● 云端未同步 · 请导出备份';$('#saveStatus').classList.add('save-error');$('#retryCloudBtn').hidden=false;toast(error.message)}
+  }catch(error){$('#saveStatus').textContent=cloudStore.conflicted?'● 云端有新版本 · 同步已暂停':draftSaved?'● 本机草稿已保存 · 云端未同步':'● 云端未同步 · 请导出备份';$('#saveStatus').classList.add('save-error');$('#retryCloudBtn').hidden=false;toast(error.message)}finally{pendingStateWrites--}
  });
+}
+async function checkExternalChanges(){
+ if(!state||checkingCloud||document.hidden||pendingStateWrites||routeBusy||picking||$('#modal').open||cloudStore.conflicted)return;
+ checkingCloud=true;const generation=localEditGeneration;
+ try{
+  if(await cloudStore.getRemoteRevision()===cloudStore.revision)return;
+  const record=await cloudStore.fetchState();
+  if(generation!==localEditGeneration||pendingStateWrites||routeBusy||picking||$('#modal').open)return;
+  let draft;try{draft=JSON.parse(localStorage.getItem(STORE+'-draft'))}catch{}
+  if(draft?.dirty){cloudStore.freeze();$('#saveStatus').textContent='● 云端已更新 · 本机草稿已保留';$('#retryCloudBtn').hidden=false;$('#saveStatus').classList.add('save-error');return}
+  state=cloudStore.adoptState(record);render(false);$('#saveStatus').textContent='● 已与云端同步';toast('已同步 Agent / 其他设备的行程修改。');
+ }catch{/* A transient background read never replaces the current plan. */}finally{checkingCloud=false}
 }
 function retryCloudSave(){
  if(!state)return location.reload();
@@ -258,6 +274,7 @@ async function calculate(all=false,force=false){
 
 async function search(e){e.preventDefault();const q=$('#searchInput').value.trim();if(q.length<2)return toast('请输入至少两个字符');if(Date.now()-lastSearch<1100)return;lastSearch=Date.now();const box=$('#searchResults');box.hidden=false;box.innerHTML='<div class="results-info">正在查找地点…</div>';try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}});if(!r.ok)throw Error('地点搜索暂时不可用');searchResults=await r.json();box.innerHTML=searchResults.length?searchResults.map((s,i)=>`<button data-search-index="${i}" type="button">⌖ ${esc(s.display_name)}<br><small>添加到当天计划 ↗ · © OpenStreetMap / Nominatim</small></button>`).join(''):'<div class="results-info">没有找到结果，试试当地名称和城市，或使用地图选点。</div>'}catch(e){box.innerHTML='<div class="results-info">'+esc(e.message)+'；可直接在地图选点添加。</div>'}}
 const actions={
+ 'agent-connect':()=>showAgentConnections({store:cloudStore,modal,toast}),
  'retry-cloud-save':retryCloudSave,'resolve-cloud-conflict':()=>{download(JSON.stringify(state,null,2),'Roam-未同步草稿.json','application/json');localStorage.removeItem(STORE+'-draft');location.reload()},'audit-transport':auditTripTransport,'trips':manageTrips,'new-trip':()=>editTrip(true),'trip-edit':()=>editTrip(),'new-day':()=>editDay(true),'day-edit':()=>editDay(),'new-stop':()=>editStop(),'stop-edit':()=>editStop(selection?.id),'leg-edit':editLeg,
  'close-modal':close,'close-detail':()=>{closePlacePanel();selection=null;render(false)},'stop-delete':()=>confirmDelete('stop'),'day-delete':()=>confirmDelete('day'),'trip-delete':()=>confirmDelete('trip'),
  'zoom-in':()=>zoomMap(1),'zoom-out':()=>zoomMap(-1),

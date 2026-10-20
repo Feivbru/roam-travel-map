@@ -155,4 +155,5 @@
 .repeat-visit.is-current{border-color:#6d9c82;background:#edf4e8}.repeat-visit.is-current>b{background:#216961;color:white}
 
 .visit-pin{transform:translate(var(--pin-x,0px),var(--pin-y,0px))}
-.visit-pin-leader{position:absolute;bottom:0;left:50%;width:1px;height:1px;overflow:visible;pointer-events:none;stroke:#577c67;stroke-width:1.5;fill:#fffefa;filter:drop-shadow(0 1px 1px #ffffffb3)}
+.map-pin-leaders{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;stroke:#789487;stroke-width:1.25;fill:#fffefa;stroke-linecap:round}
+.map-pin-anchor.is-displaced .visit-pin:after{display:none}

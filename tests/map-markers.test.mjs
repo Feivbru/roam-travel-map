@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {makeStop} from '../core.mjs';
-import {groupMapVisits,mapMarkerHTML,markerVisits,visitNumber,arrangePinLabels} from '../map-markers.mjs';
+import {groupMapVisits,mapMarkerHTML,markerVisits,visitNumber,arrangePinLabels,pinLeaderSegment} from '../map-markers.mjs';
 
 const stop=(name,lat=47.5,lng=19.08,tags=['住宿'])=>({...makeStop(name,lat,lng),tags});
 const day=stops=>({id:crypto.randomUUID(),stops});
@@ -75,27 +75,43 @@ test('轻微边缘重叠不挪动，平移与亚像素波动不会重新分配�
  assert.deepEqual(arrangePinLabels(jitter,initial),initial);
 });
 
-test('缩放后保留既定方向，宁可轻微重叠也不从上侧翻到下侧',()=>{
+test('小幅缩放保持方向，明显更近时允许改变方向缩短引线',()=>{
  const base={left:100,top:100,width:50,height:36};
  const previous=[{x:0,y:0},{x:0,y:-40,direction:[0,-1]}];
- // The second label is now north of the first. Moving down is shorter, but
- // must not reverse the established upward direction.
- const offsets=arrangePinLabels([base,{...base,top:120}],previous);
- assert.equal(offsets[1].x,0);assert.ok(offsets[1].y<0);assert.deepEqual(offsets[1].direction,[0,-1]);
- const diagonal=[previous[0],{x:40,y:-40,direction:[Math.SQRT1_2,-Math.SQRT1_2]}];
- const result=arrangePinLabels([base,{...base,left:90,top:110}],diagonal);
- assert.ok(result[1].x>0&&result[1].y<0);
+ for(const top of [96,100,104,110]){
+  const result=arrangePinLabels([base,{...base,top}],previous);
+  assert.equal(result[1].x,0);assert.ok(result[1].y<0);
+ }
+ const closer=arrangePinLabels([base,{...base,top:120}],previous);
+ assert.ok(Math.hypot(closer[1].x,closer[1].y)<25,'不为坚持旧方向保留一条60px的引线');
 });
 
-test('回到原位需要明显余量；再次拥挤仍复用原来的方向',()=>{
+test('过长的历史偏移会收短，不再等大片留白才回到原位',()=>{
  const base={left:100,top:100,width:50,height:36};
- const history=[{x:0,y:0},{x:0,y:-40,direction:[0,-1]}];
- const justSeparated=arrangePinLabels([base,{...base,left:158}],history);
- assert.equal(justSeparated[1].y,-40);
- const spacious=arrangePinLabels([base,{...base,left:185}],history);
- assert.deepEqual(spacious[1],{x:0,y:0,direction:[0,-1]});
- const crowdedAgain=arrangePinLabels([base,{...base,left:105}],spacious);
- assert.equal(crowdedAgain[1].x,0);assert.ok(crowdedAgain[1].y<0);
+ const history=[{x:0,y:0},{x:0,y:-120,direction:[0,-1]}];
+ const shortened=arrangePinLabels([base,{...base,left:115}],history);
+ assert.equal(shortened[1].x,0);assert.ok(shortened[1].y<0&&shortened[1].y>=-40);
+ const separated=arrangePinLabels([base,{...base,left:154}],shortened);
+ assert.deepEqual(separated[1],{x:0,y:0,direction:[0,-1]});
+});
+
+test('避让方向跟随邻居几何位置，没有固定的左上优先',()=>{
+ const base={left:100,top:100,width:50,height:36};
+ const down=arrangePinLabels([base,{...base,top:125}])[1];
+ const up=arrangePinLabels([base,{...base,top:75}])[1];
+ const left=arrangePinLabels([base,{...base,left:62}])[1];
+ const right=arrangePinLabels([base,{...base,left:138}])[1];
+ assert.ok(down.y>0&&Math.hypot(down.x,down.y)<20);
+ assert.ok(up.y<0&&Math.hypot(up.x,up.y)<20);
+ assert.ok(left.x<0&&Math.hypot(left.x,left.y)<20);
+ assert.ok(right.x>0&&Math.hypot(right.x,right.y)<20);
+});
+
+test('引线连接标签最近边缘，而非总是连到下方尖角',()=>{
+ assert.deepEqual(pinLeaderSegment({width:50,height:36},{x:60,y:0}),{x:35,y:-6});
+ assert.deepEqual(pinLeaderSegment({width:50,height:36},{x:0,y:-40}),{x:0,y:-46});
+ assert.equal(pinLeaderSegment({width:50,height:36},{x:0,y:0}),null);
+ assert.equal(pinLeaderSegment({width:50,height:36},{x:0,y:15}),null);
 });
 
 test('连续放大缩小多个来回，方向与布局可重复，不累积漂移',()=>{

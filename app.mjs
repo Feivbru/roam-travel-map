@@ -1,3 +1,4 @@
+import {createPinLeaderLayers} from './map-leaders.mjs';
 import {groupMapVisits,mapMarkerHTML,visitNumber,visitRole,arrangePinLabels} from './map-markers.mjs';
 import {showAgentConnections} from './agent-ui.mjs';
 import {initializeCloudAuth,cloudStore,cloudUser} from './cloud-auth.mjs';
@@ -14,6 +15,7 @@ const dayColors=['#216961','#a4864e','#7964a1','#537db0','#b46e61','#718d54'];
 let mapPinElements=[],pinLayoutTimer,pinLayoutFrame;
 const pinLayoutHistory=new Map();
 const map=L.map('map',{zoomControl:false,doubleClickZoom:false,scrollWheelZoom:false,zoomSnap:0}).setView([47.499,19.053],13);
+const pinLeaders=createPinLeaderLayers({map,pins:()=>mapPinElements,engine:()=>engine});
 // Shared zoom controls stay beside the floating card in either map engine.
 const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'}).addTo(map);
 let tileErrors=0;tiles.on('tileerror',()=>{if(++tileErrors===5)toast('地图底图加载失败；计划与标记仍可使用，请检查网络。')});
@@ -107,10 +109,8 @@ function schedulePinLayout(){
  pinLayoutTimer=setTimeout(()=>{pinLayoutFrame=requestAnimationFrame(layoutMapPins)},140);
 }
 function applyPinOffset(el,offset={x:0,y:0}){
- const {x,y}=offset;el.style.setProperty('--pin-x',x+'px');el.style.setProperty('--pin-y',y+'px');
- let line=el.querySelector('.visit-pin-leader');
- if(!line){line=document.createElementNS('http://www.w3.org/2000/svg','svg');line.setAttribute('class','visit-pin-leader');line.setAttribute('aria-hidden','true');el.prepend(line)}
- line.innerHTML=x||y?`<line x1="0" y1="0" x2="${x}" y2="${y}"/><circle cx="0" cy="0" r="2.5"/>`:'';
+ el.classList.toggle('is-displaced',Boolean(offset.x||offset.y));
+ el.style.setProperty('--pin-x',offset.x+'px');el.style.setProperty('--pin-y',offset.y+'px');
 }
 function rememberMapPin(el,group){
  const key=[tripId,overview?'overview':dayId,group.lat,group.lng,group.visits.map(v=>v.stop.id).sort().join(',')].join(':');
@@ -118,22 +118,23 @@ function rememberMapPin(el,group){
  const priority=group.visits.some(v=>v.isStart||v.isEnd)?2:group.visits.length>1?1:0;
  const anchor=el.querySelector('.map-pin-anchor');
  applyPinOffset(anchor,pinLayoutHistory.get(key));
- mapPinElements.push({el,key,priority});
+ mapPinElements.push({el,key,priority,lat:group.lat,lng:group.lng});
 }
 function layoutMapPins(){
  const pins=mapPinElements.filter(p=>p.el.isConnected).sort((a,b)=>b.priority-a.priority);
  const anchors=pins.map(p=>p.el.querySelector('.map-pin-anchor'));
  // Measure the unshifted wrapper; the child label alone carries the offset.
- const rects=anchors.map(el=>el.getBoundingClientRect());
+ const rects=anchors.map(el=>{const r=el.getBoundingClientRect();return {left:r.left,top:r.top,width:r.width,height:r.height-6}});
  if(rects.some(r=>!r.width||!r.height))return; // Google is still attaching its overlay.
  const offsets=arrangePinLabels(rects,pins.map(p=>pinLayoutHistory.get(p.key)));
- anchors.forEach((el,i)=>{applyPinOffset(el,offsets[i]);pinLayoutHistory.set(pins[i].key,offsets[i])});
+ anchors.forEach((el,i)=>{applyPinOffset(el,offsets[i]);pinLayoutHistory.set(pins[i].key,offsets[i]);pins[i].geometry=rects[i];pins[i].offset=offsets[i]});
+ pinLeaders.redraw();
  // UI-only memory is bounded and never changes the saved trip or route geometry.
  while(pinLayoutHistory.size>2000)pinLayoutHistory.delete(pinLayoutHistory.keys().next().value);
 }
 function mapVisitGroups(){return groupMapVisits(visibleDays(),trip()?.days??[])}
 function drawMap(fit=false){
- mapPinElements=[];
+ pinLeaders.clear();mapPinElements=[];
  leafletObjects.forEach(x=>map.removeLayer(x));leafletObjects=[];
  googleObjects.forEach(x=>{if('setMap'in x)x.setMap(null);else x.map=null});googleObjects=[];
  // Route legs stay independent: grouping pins never changes itinerary coordinates or routes.
@@ -269,7 +270,7 @@ function settings(){
 }
 
 let googleLoading=null;
-async function connectGoogle(key){if(!window.google?.maps?.importLibrary){if(googleLoading)await googleLoading;else{googleLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');let done=false;const timer=setTimeout(()=>fail('加载超时，请检查网络 / Key'),18000);function fail(message){if(done)return;done=true;clearTimeout(timer);script.remove();googleLoading=null;reject(Error(message))}window.roamGoogleReady=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};window.gm_authFailure=()=>{fail('Key 未获授权，请核对 API、网站限制与计费');engine='osm';$('#gmap').hidden=true;$('#map').hidden=false;map.invalidateSize();render(true);toast('Google Key 验证失败，已恢复 OpenStreetMap')};script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',callback:'roamGoogleReady',language:'zh-CN'});script.onerror=()=>fail('无法加载 Google Maps');document.head.append(script)});await googleLoading}}await Promise.all([google.maps.importLibrary('maps'),google.maps.importLibrary('marker'),google.maps.importLibrary('routes')]);if(!googleMap){googleMap=new google.maps.Map($('#gmap'),{center:{lat:47.499,lng:19.053},zoom:13,mapId:'DEMO_MAP_ID',disableDefaultUI:true,zoomControl:false,gestureHandling:'greedy',scrollwheel:false,isFractionalZoomEnabled:true,clickableIcons:true});googleMap.addListener('bounds_changed',cancelPinLayout);googleMap.addListener('idle',schedulePinLayout);googleMap.addListener('click',e=>{if(e.placeId){e.stop();pickGooglePlace(e.placeId)}else if(picking)acceptMapPoint({lat:e.latLng.lat(),lng:e.latLng.lng()})})}}
+async function connectGoogle(key){if(!window.google?.maps?.importLibrary){if(googleLoading)await googleLoading;else{googleLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');let done=false;const timer=setTimeout(()=>fail('加载超时，请检查网络 / Key'),18000);function fail(message){if(done)return;done=true;clearTimeout(timer);script.remove();googleLoading=null;reject(Error(message))}window.roamGoogleReady=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};window.gm_authFailure=()=>{fail('Key 未获授权，请核对 API、网站限制与计费');engine='osm';$('#gmap').hidden=true;$('#map').hidden=false;map.invalidateSize();render(true);toast('Google Key 验证失败，已恢复 OpenStreetMap')};script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',callback:'roamGoogleReady',language:'zh-CN'});script.onerror=()=>fail('无法加载 Google Maps');document.head.append(script)});await googleLoading}}await Promise.all([google.maps.importLibrary('maps'),google.maps.importLibrary('marker'),google.maps.importLibrary('routes')]);if(!googleMap){googleMap=new google.maps.Map($('#gmap'),{center:{lat:47.499,lng:19.053},zoom:13,mapId:'DEMO_MAP_ID',disableDefaultUI:true,zoomControl:false,gestureHandling:'greedy',scrollwheel:false,isFractionalZoomEnabled:true,clickableIcons:true});pinLeaders.connectGoogle(googleMap);googleMap.addListener('bounds_changed',cancelPinLayout);googleMap.addListener('idle',schedulePinLayout);googleMap.addListener('click',e=>{if(e.placeId){e.stop();pickGooglePlace(e.placeId)}else if(picking)acceptMapPoint({lat:e.latLng.lat(),lng:e.latLng.lng()})})}}
 let transportAudit=[];
 function stepsFor(route){return (route.legs??[]).flatMap(l=>(l.steps??[]).map(s=>{const t=s.transitDetails;if(t)return `${t.transitLine?.shortName??t.transitLine?.name??'公共交通'} · ${t.departureStop?.name??''} → ${t.arrivalStop?.name??''}${t.headsign?' · 往 '+t.headsign:''}`;return (s.instructions??s.travelMode??'步行').replace(/<[^>]*>/g,'')}))}
 async function fetchGoogleRoute(d,i,tz,recommended=false){

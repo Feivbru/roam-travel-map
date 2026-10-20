@@ -41,47 +41,74 @@ export function markerVisits(group,selectedId,overview=false){
 export const visitNumber=(v,overview=false)=>`${overview?'D'+(v.dayIndex+1)+'·':''}${v.index+1}`;
 export const visitRole=v=>[v.isStart?'起点':'',v.isEnd?'终点':''].filter(Boolean).join(' / ');
 
-// Layout history belongs to a stable place key, not the currently selected stop.
-// A small overlap is preferable to moving a label. Entry and exit use different
-// thresholds so zooming around a boundary cannot toggle the offset repeatedly.
+const pinBounds=(rect,offset={x:0,y:0})=>({left:rect.left+offset.x,top:rect.top+offset.y,right:rect.left+offset.x+rect.width,bottom:rect.top+offset.y+rect.height});
+function pinOverlap(a,b){
+ const w=Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left));
+ const h=Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+ if(Math.min(w,h)<=3)return 0;
+ return w*h/Math.max(1,Math.min((a.right-a.left)*(a.bottom-a.top),(b.right-b.left)*(b.bottom-b.top)));
+}
+
+// Geometry supplies candidate positions at obstacle edges, rather than scanning
+// compass directions at fixed distances. History is a preference, never a lock.
 export function arrangePinLabels(rects,previous=[]){
- const placed=[];
- const origin={x:0,y:0};
- const directions=[[0,-1],[0,1],[-1,0],[1,0],[-Math.SQRT1_2,-Math.SQRT1_2],[Math.SQRT1_2,-Math.SQRT1_2],[-Math.SQRT1_2,Math.SQRT1_2],[Math.SQRT1_2,Math.SQRT1_2]];
+ const placed=[],homes=rects.map(r=>pinBounds(r)),maxShift=96;
  return rects.map((rect,i)=>{
-  const prior=previous[i],current=prior?{x:prior.x,y:prior.y}:origin;
-  const bounds=offset=>({left:rect.left+offset.x,top:rect.top+offset.y,right:rect.left+offset.x+rect.width,bottom:rect.top+offset.y+rect.height});
-  const overlap=offset=>{
-   const next=bounds(offset);
-   return placed.reduce((worst,p)=>{
-    const w=Math.max(0,Math.min(next.right,p.right)-Math.max(next.left,p.left));
-    const h=Math.max(0,Math.min(next.bottom,p.bottom)-Math.max(next.top,p.top));
-    // Edge contact and up to 4px of intrusion are harmless.
-    if(Math.min(w,h)<=4)return worst;
-    const area=Math.min(rect.width*rect.height,(p.right-p.left)*(p.bottom-p.top));
-    return Math.max(worst,w*h/Math.max(1,area));
-   },0);
-  };
-  const clearHome=()=>{
-   const home=bounds(origin),gap=22;
-   return placed.every(p=>home.right+gap<=p.left||home.left-gap>=p.right||home.bottom+gap<=p.top||home.top-gap>=p.bottom);
-  };
-  let chosen=current,direction=prior?.direction;
-  if((current.x||current.y)&&clearHome())chosen=origin;
-  else if(overlap(current)>((current.x||current.y) ? .30 : .18)){
-   // Once assigned, keep this direction even if the opposite side becomes cheaper.
-   const rays=direction?[direction]:directions;
-   const candidates=rays.flatMap(ray=>[40,56,72,96,120].map(length=>({x:Math.round(ray[0]*length),y:Math.round(ray[1]*length),direction:ray})));
-   let best={...current,direction,score:Math.max(0,overlap(current)-.18)*1000};
-   for(const candidate of candidates){
-    const score=Math.max(0,overlap(candidate)-.18)*1000+Math.hypot(candidate.x-current.x,candidate.y-current.y)*.35;
-    if(score<best.score)best={...candidate,score};
-   }
-   chosen=best;direction=best.direction;
+  const old=previous[i],prior=old??{x:0,y:0},home=homes[i];
+  const nearby=homes.filter((p,j)=>j!==i&&Math.abs((p.left+p.right-home.left-home.right)/2)<rect.width+maxShift&&Math.abs((p.top+p.bottom-home.top-home.bottom)/2)<rect.height+maxShift);
+  const obstacles=placed.filter(p=>Math.abs((p.left+p.right-home.left-home.right)/2)<rect.width+maxShift&&Math.abs((p.top+p.bottom-home.top-home.bottom)/2)<rect.height+maxShift);
+  const future=homes.slice(i+1).filter(p=>nearby.includes(p));
+  const severity=box=>obstacles.reduce((max,p)=>Math.max(max,pinOverlap(box,p)),0);
+  const homeFree=severity(home)<=(old&&(old.x||old.y) ? .08 : .16);
+  const xs=new Set([0]),ys=new Set([0]);
+  for(const p of [...obstacles,...future]){
+   xs.add(p.left-home.right-3);xs.add(p.right-home.left+3);
+   ys.add(p.top-home.bottom-3);ys.add(p.bottom-home.top+3);
   }
-  placed.push(bounds(chosen));
-  return {x:chosen.x,y:chosen.y,...(direction?{direction}: {})};
+  // All-neighbor geometry breaks equal-distance ties toward open space.
+  let awayX=0,awayY=0;
+  for(const p of nearby){
+   const dx=(home.left+home.right-p.left-p.right)/2,dy=(home.top+home.bottom-p.top-p.bottom)/2;
+   const length=Math.hypot(dx,dy);if(length){awayX+=dx/(length*length);awayY+=dy/(length*length)}
+  }
+  const awayLength=Math.hypot(awayX,awayY)||1;awayX/=awayLength;awayY/=awayLength;
+  const direction=old?.direction??(Math.hypot(prior.x,prior.y)?[prior.x/Math.hypot(prior.x,prior.y),prior.y/Math.hypot(prior.x,prior.y)]:null);
+  if(homeFree){placed.push(home);return {x:0,y:0,...(direction?{direction}: {})}}
+  const candidates=[{x:0,y:0},{x:prior.x,y:prior.y}];
+  // Shorten a historical offset along the same ray as soon as space permits.
+  if(direction){
+   for(const x of xs){const n=x/direction[0];if(Number.isFinite(n)&&n>=0)candidates.push({x,y:direction[1]*n})}
+   for(const y of ys){const n=y/direction[1];if(Number.isFinite(n)&&n>=0)candidates.push({x:direction[0]*n,y})}
+  }
+  const nearest=values=>[...values].filter(n=>Math.abs(n)<=maxShift).sort((a,b)=>Math.abs(a)-Math.abs(b)).slice(0,16);
+  for(const x of nearest(xs))for(const y of nearest(ys))candidates.push({x,y});
+  const score=c=>{
+   const length=Math.hypot(c.x,c.y);if(length>maxShift+.01)return Infinity;
+   if(!length&&!homeFree)return Infinity;
+   const box=pinBounds(rect,c),collision=severity(box);
+   const futureOverlap=future.reduce((sum,p)=>sum+Math.max(0,pinOverlap(box,p)-.16),0);
+   const turn=direction&&length?1-Math.max(-1,Math.min(1,(c.x*direction[0]+c.y*direction[1])/length)):0;
+   return Math.max(0,collision-.16)*1600+futureOverlap*170+length+turn*10+Math.hypot(c.x-prior.x,c.y-prior.y)*.06-(c.x*awayX+c.y*awayY)*.06;
+  };
+  // Prefer the nearest geometry-based placement, with a small stability cost.
+  let chosen=candidates[0],best=score(chosen);
+  for(const candidate of candidates){const value=score(candidate);if(value<best-.01){chosen=candidate;best=value}}
+  const oldScore=score(prior);
+  if(old&&severity(pinBounds(rect,prior))<=.28&&oldScore<=best+5)chosen=prior;
+  const x=Math.round(chosen.x*10)/10,y=Math.round(chosen.y*10)/10,length=Math.hypot(x,y);
+  const result={x,y,...(length?{direction:[x/length,y/length]}:direction?{direction}: {})};
+  placed.push(pinBounds(rect,result));return result;
  });
+}
+
+// End the connector at the nearest label edge, not at its shifted bottom tip.
+// The final few pixels sit beneath the opaque label in the separate lower pane.
+export function pinLeaderSegment({width,height},offset){
+ if(!offset||(offset.x===0&&offset.y===0))return null;
+ const left=-width/2+offset.x,right=width/2+offset.x,top=-height-6+offset.y,bottom=-6+offset.y;
+ const x=Math.max(left,Math.min(right,0)),y=Math.max(top,Math.min(bottom,0));
+ if(Math.hypot(x,y)<5)return null;
+ return {x,y};
 }
 
 export function mapMarkerHTML(group,{selectedId,overview=false,colors=['#487d64']}={}){

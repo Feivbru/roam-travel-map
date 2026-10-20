@@ -41,20 +41,46 @@ export function markerVisits(group,selectedId,overview=false){
 export const visitNumber=(v,overview=false)=>`${overview?'D'+(v.dayIndex+1)+'·':''}${v.index+1}`;
 export const visitRole=v=>[v.isStart?'起点':'',v.isEnd?'终点':''].filter(Boolean).join(' / ');
 
-// Move labels only, never the map coordinate. Highest-priority pins are placed first.
-export function arrangePinLabels(rects){
+// Layout history belongs to a stable place key, not the currently selected stop.
+// A small overlap is preferable to moving a label. Entry and exit use different
+// thresholds so zooming around a boundary cannot toggle the offset repeatedly.
+export function arrangePinLabels(rects,previous=[]){
  const placed=[];
- return rects.map(rect=>{
-  const candidates=[[0,0],[0,-54],[0,54],[-74,0],[74,0],[-74,-54],[74,-54],[-74,54],[74,54],[0,-108],[0,108],[-148,0],[148,0]];
-  let best;
-  for(const [x,y] of candidates){
-   const next={left:rect.left+x,top:rect.top+y,right:rect.left+x+rect.width,bottom:rect.top+y+rect.height};
-   const overlap=placed.reduce((sum,p)=>sum+Math.max(0,Math.min(next.right+5,p.right)-Math.max(next.left-5,p.left))*Math.max(0,Math.min(next.bottom+5,p.bottom)-Math.max(next.top-5,p.top)),0);
-   const score=overlap*100+Math.hypot(x,y);
-   if(!best||score<best.score)best={x,y,next,score};
-   if(!score)break;
+ const origin={x:0,y:0};
+ const directions=[[0,-1],[0,1],[-1,0],[1,0],[-Math.SQRT1_2,-Math.SQRT1_2],[Math.SQRT1_2,-Math.SQRT1_2],[-Math.SQRT1_2,Math.SQRT1_2],[Math.SQRT1_2,Math.SQRT1_2]];
+ return rects.map((rect,i)=>{
+  const prior=previous[i],current=prior?{x:prior.x,y:prior.y}:origin;
+  const bounds=offset=>({left:rect.left+offset.x,top:rect.top+offset.y,right:rect.left+offset.x+rect.width,bottom:rect.top+offset.y+rect.height});
+  const overlap=offset=>{
+   const next=bounds(offset);
+   return placed.reduce((worst,p)=>{
+    const w=Math.max(0,Math.min(next.right,p.right)-Math.max(next.left,p.left));
+    const h=Math.max(0,Math.min(next.bottom,p.bottom)-Math.max(next.top,p.top));
+    // Edge contact and up to 4px of intrusion are harmless.
+    if(Math.min(w,h)<=4)return worst;
+    const area=Math.min(rect.width*rect.height,(p.right-p.left)*(p.bottom-p.top));
+    return Math.max(worst,w*h/Math.max(1,area));
+   },0);
+  };
+  const clearHome=()=>{
+   const home=bounds(origin),gap=22;
+   return placed.every(p=>home.right+gap<=p.left||home.left-gap>=p.right||home.bottom+gap<=p.top||home.top-gap>=p.bottom);
+  };
+  let chosen=current,direction=prior?.direction;
+  if((current.x||current.y)&&clearHome())chosen=origin;
+  else if(overlap(current)>((current.x||current.y) ? .30 : .18)){
+   // Once assigned, keep this direction even if the opposite side becomes cheaper.
+   const rays=direction?[direction]:directions;
+   const candidates=rays.flatMap(ray=>[40,56,72,96,120].map(length=>({x:Math.round(ray[0]*length),y:Math.round(ray[1]*length),direction:ray})));
+   let best={...current,direction,score:Math.max(0,overlap(current)-.18)*1000};
+   for(const candidate of candidates){
+    const score=Math.max(0,overlap(candidate)-.18)*1000+Math.hypot(candidate.x-current.x,candidate.y-current.y)*.35;
+    if(score<best.score)best={...candidate,score};
+   }
+   chosen=best;direction=best.direction;
   }
-  placed.push(best.next);return {x:best.x,y:best.y};
+  placed.push(bounds(chosen));
+  return {x:chosen.x,y:chosen.y,...(direction?{direction}: {})};
  });
 }
 

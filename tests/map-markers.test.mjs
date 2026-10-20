@@ -57,6 +57,56 @@ test('邻近车站与酒店标签避让，优先保留起终点位置，不改�
  const offsets=arrangePinLabels(rects);
  assert.deepEqual(offsets[0],{x:0,y:0});assert.notDeepEqual(offsets[1],{x:0,y:0});assert.deepEqual(offsets[2],{x:0,y:0});
  const b={...rects[1],left:rects[1].left+offsets[1].x,top:rects[1].top+offsets[1].y};
- assert.ok(b.left+b.width<=100||b.left>=195||b.top+b.height<=100||b.top>=149);
+ const overlapX=Math.max(0,Math.min(b.left+b.width,195)-Math.max(b.left,100));
+ const overlapY=Math.max(0,Math.min(b.top+b.height,149)-Math.max(b.top,100));
+ assert.ok(overlapX<=6||overlapY<=6,'允许边缘轻微接触，主体不能互相遮住');
  assert.equal(rects[1].left,112);
+});
+
+test('轻微边缘重叠不挪动，平移与亚像素波动不会重新分配方向',()=>{
+ const edge=[{left:100,top:100,width:50,height:36},{left:145,top:100,width:50,height:36}];
+ assert.deepEqual(arrangePinLabels(edge),[{x:0,y:0},{x:0,y:0}]);
+ const crowded=[edge[0],{...edge[1],left:115}];
+ const initial=arrangePinLabels(crowded);
+ assert.notDeepEqual(initial[1],{x:0,y:0});
+ const shifted=crowded.map(r=>({...r,left:r.left+123.4,top:r.top-88.2}));
+ assert.deepEqual(arrangePinLabels(shifted,initial),initial);
+ const jitter=crowded.map((r,i)=>({...r,left:r.left+(i?.4:0),top:r.top-(i?.3:0)}));
+ assert.deepEqual(arrangePinLabels(jitter,initial),initial);
+});
+
+test('缩放后保留既定方向，宁可轻微重叠也不从上侧翻到下侧',()=>{
+ const base={left:100,top:100,width:50,height:36};
+ const previous=[{x:0,y:0},{x:0,y:-40,direction:[0,-1]}];
+ // The second label is now north of the first. Moving down is shorter, but
+ // must not reverse the established upward direction.
+ const offsets=arrangePinLabels([base,{...base,top:120}],previous);
+ assert.equal(offsets[1].x,0);assert.ok(offsets[1].y<0);assert.deepEqual(offsets[1].direction,[0,-1]);
+ const diagonal=[previous[0],{x:40,y:-40,direction:[Math.SQRT1_2,-Math.SQRT1_2]}];
+ const result=arrangePinLabels([base,{...base,left:90,top:110}],diagonal);
+ assert.ok(result[1].x>0&&result[1].y<0);
+});
+
+test('回到原位需要明显余量；再次拥挤仍复用原来的方向',()=>{
+ const base={left:100,top:100,width:50,height:36};
+ const history=[{x:0,y:0},{x:0,y:-40,direction:[0,-1]}];
+ const justSeparated=arrangePinLabels([base,{...base,left:158}],history);
+ assert.equal(justSeparated[1].y,-40);
+ const spacious=arrangePinLabels([base,{...base,left:185}],history);
+ assert.deepEqual(spacious[1],{x:0,y:0,direction:[0,-1]});
+ const crowdedAgain=arrangePinLabels([base,{...base,left:105}],spacious);
+ assert.equal(crowdedAgain[1].x,0);assert.ok(crowdedAgain[1].y<0);
+});
+
+test('连续放大缩小多个来回，方向与布局可重复，不累积漂移',()=>{
+ const center={left:200,top:200,width:50,height:36};
+ let history=[];const directions=[];
+ for(let cycle=0;cycle<3;cycle++){
+  for(const gap of [12,16,30,48,56,70,90,70,56,48,30,16,12]){
+   history=arrangePinLabels([center,{...center,left:center.left+gap}],history);
+   if(history[1].direction)directions.push(history[1].direction.join(','));
+   assert.ok(Math.hypot(history[1].x,history[1].y)<=121);
+  }
+ }
+ assert.equal(new Set(directions).size,1);
 });

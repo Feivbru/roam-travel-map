@@ -7,7 +7,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let preparationPanelOpen=false;
 let accountMapSettings={engine:'osm',key:''};
 let state,tripId,dayId,selection=null,overview=false,picking=false,engine='osm',googleMap,googleObjects=[],leafletObjects=[],routeBusy=false,routeCache=new Map(),saveQueue=Promise.resolve(),searchResults=[],lastSearch=0,toastTimer;
-let STORE='roam-cloud-state-v1',localEditGeneration=0,pendingStateWrites=0,checkingCloud=false;
+let STORE='roam-cloud-state-v1',localEditGeneration=0,pendingStateWrites=0,checkingCloud=false,hasUnsyncedState=false;
 const trip=()=>state.trips.find(t=>t.id===tripId), day=()=>trip()?.days.find(d=>d.id===dayId);
 const dayColors=['#216961','#a4864e','#7964a1','#537db0','#b46e61','#718d54'];
 const map=L.map('map',{zoomControl:false,doubleClickZoom:false,scrollWheelZoom:false,zoomSnap:0}).setView([47.499,19.053],13);
@@ -31,7 +31,7 @@ async function init(){
  await initializeCloudAuth();STORE+=':'+cloudUser().id;
  const remote=await cloudStore.loadState();
  let draft;try{draft=JSON.parse(localStorage.getItem(STORE+'-draft'))}catch{}
- const hasDraft=draft?.dirty&&draft.payload;
+ const hasDraft=draft?.dirty&&draft.payload;hasUnsyncedState=Boolean(hasDraft);
  state=hasDraft?validateState(draft.payload):remote;
  if(hasDraft&&draft.baseRevision!==cloudStore.revision)cloudStore.freeze();
  tripId=state.trips[0]?.id;dayId=trip()?.days[0]?.id;
@@ -47,10 +47,11 @@ function persist(){
  try{state=validateState(state);payload=structuredClone(state)}catch(error){toast('保存失败：'+error.message);return}
  try{localStorage.setItem(STORE+'-draft',JSON.stringify({payload,baseRevision:cloudStore.revision,dirty:true}));draftSaved=true}catch{toast('本机备份空间不足，仍会尝试云端保存；请保持页面打开。')}
  $('#saveStatus').textContent='● 正在同步…';$('#saveStatus').classList.remove('save-error')
- pendingStateWrites++;
+ const generation=localEditGeneration;hasUnsyncedState=true;pendingStateWrites++;
  saveQueue=saveQueue.catch(()=>{}).then(async()=>{
   try{
    await cloudStore.saveState(payload);
+   if(generation===localEditGeneration)hasUnsyncedState=false;
    try{const latest=JSON.parse(localStorage.getItem(STORE+'-draft')||'null');
    if(JSON.stringify(latest?.payload)===JSON.stringify(payload))localStorage.removeItem(STORE+'-draft');
    else if(latest){latest.baseRevision=cloudStore.revision;localStorage.setItem(STORE+'-draft',JSON.stringify(latest))}}catch{}
@@ -66,7 +67,7 @@ async function checkExternalChanges(){
   const record=await cloudStore.fetchState();
   if(generation!==localEditGeneration||pendingStateWrites||routeBusy||picking||$('#modal').open)return;
   let draft;try{draft=JSON.parse(localStorage.getItem(STORE+'-draft'))}catch{}
-  if(draft?.dirty){cloudStore.freeze();$('#saveStatus').textContent='● 云端已更新 · 本机草稿已保留';$('#retryCloudBtn').hidden=false;$('#saveStatus').classList.add('save-error');return}
+  if(hasUnsyncedState||draft?.dirty){cloudStore.freeze();$('#saveStatus').textContent='● 云端已更新 · 本机草稿已保留';$('#retryCloudBtn').hidden=false;$('#saveStatus').classList.add('save-error');return}
   state=cloudStore.adoptState(record);render(false);$('#saveStatus').textContent='● 已与云端同步';toast('已同步 Agent / 其他设备的行程修改。');
  }catch{/* A transient background read never replaces the current plan. */}finally{checkingCloud=false}
 }
